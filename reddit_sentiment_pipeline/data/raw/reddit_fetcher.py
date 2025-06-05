@@ -20,7 +20,7 @@ print("Reddit client initialized successfully.")
 print(reddit.user.me())
 
 
-def fetch_reddit_comments(filename, subreddit_name, limit=100):
+def fetch_reddit_comments(filename: str, subreddit_name: str, limit: int):
     """
     Fetches comments from a specified subreddit.
 
@@ -37,27 +37,22 @@ def fetch_reddit_comments(filename, subreddit_name, limit=100):
     subreddit = reddit.subreddit(subreddit_name)
     comments = []
     for comment in subreddit.comments(limit=limit):
-        comments.append({"comment_body": comment.body})
+        comments.append({"comment_id": comment.id,
+                         "comment_body": comment.body
+                            , "created_utc": comment.created_utc})
 
     if not comments:
         print(f"Failed to fetch comments from the subreddit r/{subreddit_name}")
         return []
-    fieldnames = ['comment_body']
+    fieldnames = ['comment_id', 'created_utc', 'comment_body']
 
-    # Save comments to a CSV file
-    if not os.path.exists(filename):
-        print(f"File {filename} does not exist. Creating a new file.")
-        with open(filename, "w", newline="", encoding="utf-8") as comment_file:
-            writer = csv.DictWriter(comment_file, delimiter=",", fieldnames=fieldnames)
-            writer.writeheader()
-            for comment in comments:
-                writer.writerow(comment)
-    else:
-        with open(filename, "w", newline="", encoding="utf-8") as comment_file:
-            writer = csv.DictWriter(comment_file, delimiter=",", fieldnames=fieldnames)
-            writer.writeheader()
-            for comment in comments:
-                writer.writerow(comment)
+    # Save comments to CSV file
+    # "w" handles the exception if a file does not exist
+    with open(filename, "w", newline="", encoding="utf-8") as comment_file:
+        writer = csv.DictWriter(comment_file, delimiter=",", fieldnames=fieldnames)
+        writer.writeheader()
+        for comment in comments:
+            writer.writerow(comment)
     print(f"Saved {len(comments)} comments to {filename}")
     return [item['comment_body'] for item in comments]
 
@@ -82,4 +77,4 @@ def fetch_reddit_comments(filename, subreddit_name, limit=100):
 #     return
 
 
-fetch_reddit_comments("comments.csv", subreddit_name="quant",limit=10)
+fetch_reddit_comments("comments.csv", subreddit_name="quant", limit=10)
