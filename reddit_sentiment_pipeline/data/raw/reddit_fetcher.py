@@ -7,7 +7,8 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
 from transformers import BertTokenizer
-from langdetect import detect, LangDetectException
+from dotenv import load_dotenv
+from langdetect import detect, LangDetectException,DetectorFactory
 
 reddit = praw.Reddit(
     client_id="mzLyRMCgSUkgRamThw6msg",
@@ -47,7 +48,7 @@ def fetch_reddit_comments(filename: str, subreddit_name: str, limit: int):
     fieldnames = ['comment_id', 'created_utc', 'comment_body']
 
     # Save comments to CSV file
-    # "w" handles the exception if a file does not exist
+    # "w" mode creates the file if it doesn't exist and truncates/overwrites it if it does exist
     with open(filename, "w", newline="", encoding="utf-8") as comment_file:
         writer = csv.DictWriter(comment_file, delimiter=",", fieldnames=fieldnames)
         writer.writeheader()
@@ -57,24 +58,32 @@ def fetch_reddit_comments(filename: str, subreddit_name: str, limit: int):
     return [item['comment_body'] for item in comments]
 
 
-# def get_comment_language(text_comment):
-#     """
-#     Detects the language of a single text comment.
-#     Returns the language code (e.g., 'en') or 'unknown' if detection fails.
-#     """
-#     try:
-#         # Ensure the input is a string, handle potential NaN or other types
-#         if not isinstance(text_comment, str) or pd.isna(text_comment):
-#             return "unknown"
-#         if not text_comment.strip():  # Handle empty or whitespace-only strings
-#             return "unknown"
-#         return detect(text_comment)
-#     except LangDetectException:
-#         return "unknown"  # Or any other placeholder for errors/undetectable
-#
-#
-# def clean_up_data(csvfile, new_csv):
-#     return
+
+def clean_up_data(filename: str,clean_file: str):
+    df = pd.read_csv(filename)
+    df.dropna(subset=['comment_body'],inplace=True)
+    # The line below filters out rows where the comment_body column is empty or contains only whitespace.
+    # It keeps only rows where comment_body is not an empty string after stripping spaces.
+    df = df[df['comment_body'].str.strip() != ""]
+    df = add_language_column(df)
+    df.to_csv(clean_file,index=False)
 
 
-fetch_reddit_comments("comments.csv", subreddit_name="quant", limit=10)
+
+def add_language_column(df):
+    DetectorFactory.seed = 0
+    try:
+        df['language'] = df['comment_body'].apply(lambda x: detect(x) if pd.notnull(x) and x.strip() != "" else "unknown")
+    except LangDetectException:
+        df['language'] = "unknown"
+    return df
+
+
+
+
+
+fetch_reddit_comments("comments.csv", subreddit_name="csMajors", limit=20)
+clean_up_data("comments.csv","cleaned_comments.csv")
+
+
+
