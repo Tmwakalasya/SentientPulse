@@ -1,14 +1,15 @@
 import praw
 import csv
 import pandas as pd
+import emoji
 import os
-import re
 import nltk
 from nltk.corpus import stopwords
 from nltk.stem import PorterStemmer
 from transformers import BertTokenizer
 from dotenv import load_dotenv
 from langdetect import detect, LangDetectException,DetectorFactory
+import re
 
 reddit = praw.Reddit(
     client_id="mzLyRMCgSUkgRamThw6msg",
@@ -36,13 +37,13 @@ def fetch_reddit_comments(filename: str, subreddit_name: str, limit: int):
         :param filename:
     """
     subreddit = reddit.subreddit(subreddit_name)
-    comments = []
+    comments_data = []
     for comment in subreddit.comments(limit=limit):
-        comments.append({"comment_id": comment.id,
+        comments_data.append({"comment_id": comment.id,
                          "comment_body": comment.body
                             , "created_utc": comment.created_utc})
 
-    if not comments:
+    if not comments_data:
         print(f"Failed to fetch comments from the subreddit r/{subreddit_name}")
         return []
     fieldnames = ['comment_id', 'created_utc', 'comment_body']
@@ -52,14 +53,14 @@ def fetch_reddit_comments(filename: str, subreddit_name: str, limit: int):
     with open(filename, "w", newline="", encoding="utf-8") as comment_file:
         writer = csv.DictWriter(comment_file, delimiter=",", fieldnames=fieldnames)
         writer.writeheader()
-        for comment in comments:
-            writer.writerow(comment)
-    print(f"Saved {len(comments)} comments to {filename}")
-    return [item['comment_body'] for item in comments]
+        writer.writerows(comments_data)
+    print(f"Saved {len(comments_data)} comments to {filename}")
+    return [item['comment_body'] for item in comments_data]
 
 
 
-def clean_up_data(filename: str,clean_file: str):
+def process_and_clean_data(filename: str, clean_file: str):
+    """"""
     df = pd.read_csv(filename)
     df.dropna(subset=['comment_body'],inplace=True)
     # The line below filters out rows where the comment_body column is empty or contains only whitespace.
@@ -79,11 +80,62 @@ def add_language_column(df):
     return df
 
 
+def filter_english_comments(csv: str):
+    """"""
+    df = pd.read_csv(csv)
+    # using boolean indexing, I can figure out if language == 'en':
+    # make a new column that will only include comments with english
+    is_english_mask = (df['language'] == "en")
+    english_df = df[is_english_mask].copy()
+    print(f"Number of English comments found: {len(english_df)}")
+
+    return english_df
 
 
+def clean_text_for_bert(text: str) -> str:
+    """
+    Performs a series of cleaning steps on a text string to prepare it for a
+    BERT model.
+    """
+    if not isinstance(text, str):
+        return ""
 
-fetch_reddit_comments("comments.csv", subreddit_name="csMajors", limit=20)
-clean_up_data("comments.csv","cleaned_comments.csv")
+    # 1. Lowercase the text
+    text = text.lower()
+
+    # 2. Remove URLs, emails, and HTML entities
+    text = re.sub(r'https?://\S+|www\.\S+|\S+@\S+\.\S+', ' ', text)
+    text = re.sub(r'&[a-zA-Z]+;', ' ', text)
+
+    # 3. Remove mentions and hashtags
+    text = re.sub(r'@\w+|#\w+', ' ', text)
+
+    # 4. Remove emojis
+    # The replace='' argument removes the emoji characters completely.
+    text = emoji.replace_emoji(text, replace='')
+
+    # 5. Handle Punctuation (Nuanced for BERT)
+    # This is the key addition. We remove characters that are NOT letters,
+    # numbers, spaces, or apostrophes. We replace them with a space.
+    text = re.sub(r"[^a-zA-Z0-9' ]", " ", text)
+
+    # 6. Normalize whitespace
+    # This combines multiple spaces into one and removes leading/trailing spaces.
+    text = " ".join(text.split())
 
 
+    return text
 
+if __name__ == "__main__":
+
+    english_df = filter_english_comments("cleaned_comments.csv")
+    print("\nApplying BERT-specific cleaning to English comments...")
+    english_df['cleaned_body'] = english_df['comment_body'].apply(clean_text_for_bert)
+
+    print("\nSample of final cleaned data:")
+    print(english_df[['comment_body', 'cleaned_body']].sample(5))
+    FINAL_FILENAME = "final_cleaned_data.parquet"
+    print(f"\nSaving final cleaned data to {FINAL_FILENAME}...")
+    # Using .parquet is often more efficient for DataFrames
+    english_df.to_parquet(FINAL_FILENAME, index=False)
+    print("Done!")
